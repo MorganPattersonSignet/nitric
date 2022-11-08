@@ -101,6 +101,10 @@ type Membrane struct {
 	// Handler operating mode, e.g. FaaS or HTTP Proxy. Governs how incoming triggers are translated.
 	mode Mode
 
+	// Net listener that grpcServer serves on
+	grpcListener net.Listener
+
+	// GRPC server membrane services are available on
 	grpcServer *grpc.Server
 
 	// Worker pool
@@ -162,7 +166,7 @@ func (s *Membrane) startChildProcess() error {
 // Start the membrane
 func (s *Membrane) Start() error {
 	// Search for known plugins
-
+	var err error
 	var opts []grpc.ServerOption
 	s.grpcServer = grpc.NewServer(opts...)
 
@@ -193,7 +197,7 @@ func (s *Membrane) Start() error {
 		faasServer := grpc2.NewFaasServer(s.pool)
 		v1.RegisterFaasServiceServer(s.grpcServer, faasServer)
 	}
-	lis, err := net.Listen("tcp", s.serviceAddress)
+	s.grpcListener, err = net.Listen("tcp", s.serviceAddress)
 	if err != nil {
 		return fmt.Errorf("could not listen on configured service address: %w", err)
 	}
@@ -203,7 +207,7 @@ func (s *Membrane) Start() error {
 	// Start the gRPC server
 	go (func() {
 		s.log(fmt.Sprintf("Services listening on: %s", s.serviceAddress))
-		err := s.grpcServer.Serve(lis)
+		err := s.grpcServer.Serve(s.grpcListener)
 		if err != nil {
 			s.log(fmt.Sprintf("grpc serve %v", err))
 		}
@@ -282,6 +286,15 @@ func (s *Membrane) Start() error {
 func (s *Membrane) Stop() {
 	_ = s.gatewayPlugin.Stop()
 	s.grpcServer.Stop()
+}
+
+// ServiceAddress - The address the grpc services are listening on
+func (s *Membrane) ServiceAddress() string {
+	if s.grpcListener != nil {
+		return s.grpcListener.Addr().String()
+	}
+
+	return ""
 }
 
 // Create a new Membrane server
