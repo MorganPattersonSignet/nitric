@@ -168,13 +168,13 @@ func (p *ProcessPool) GetWorkers(opts *GetWorkerOptions) []worker.Worker {
 
 	workers := append([]worker.Worker{}, p.workers...)
 
-	if opts.Trigger != nil {
+	if opts != nil && opts.Trigger != nil {
 		workers = filterWorkers(workers, func(w worker.Worker) bool {
 			return w.HandlesTrigger(opts.Trigger)
 		})
 	}
 
-	if opts.Filter != nil {
+	if opts != nil && opts.Filter != nil {
 		workers = filterWorkers(workers, opts.Filter)
 	}
 
