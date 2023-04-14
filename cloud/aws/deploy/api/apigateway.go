@@ -31,9 +31,10 @@ import (
 )
 
 type AwsApiGatewayArgs struct {
-	OpenAPISpec     *openapi3.T
-	LambdaFunctions map[string]*exec.LambdaExecUnit
-	StackID         pulumi.StringInput
+	OpenAPISpec      *openapi3.T
+	LambdaFunctions  map[string]*exec.LambdaExecUnit
+	FargateFunctions map[string]*exec.FargateExecUnit
+	StackID          pulumi.StringInput
 }
 
 type AwsApiGateway struct {
@@ -43,9 +44,11 @@ type AwsApiGateway struct {
 	Api  *apigatewayv2.Api
 }
 
-type nameArnPair struct {
-	name      string
-	invokeArn string
+type nameFunctionPair struct {
+	name string
+	// For Lambda functions this is the ARN, otherwise it's a URI
+	invokeAddr string
+	lambda     bool
 }
 
 func NewAwsApiGateway(ctx *pulumi.Context, name string, args *AwsApiGatewayArgs, opts ...pulumi.ResourceOption) (*AwsApiGateway, error) {
@@ -86,23 +89,38 @@ func NewAwsApiGateway(ctx *pulumi.Context, name string, args *AwsApiGatewayArgs,
 
 	// collect name arn pairs for output iteration
 	for k, v := range args.LambdaFunctions {
-		nameArnPairs = append(nameArnPairs, pulumi.All(k, v.Function.InvokeArn).ApplyT(func(args []interface{}) nameArnPair {
+		nameArnPairs = append(nameArnPairs, pulumi.All(k, v.Function.InvokeArn).ApplyT(func(args []interface{}) nameFunctionPair {
 			name := args[0].(string)
 			arn := args[1].(string)
 
-			return nameArnPair{
-				name:      name,
-				invokeArn: arn,
+			return nameFunctionPair{
+				name:       name,
+				invokeAddr: arn,
+				lambda:     true,
+			}
+		}))
+	}
+
+	for k, v := range args.FargateFunctions {
+		nameArnPairs = append(nameArnPairs, pulumi.All(k, v.Balancer.LoadBalancer.DnsName()).ApplyT(func(args []interface{}) nameFunctionPair {
+			name := args[0].(string)
+			// FIXME: This seems janky - testing needed. Is the DNS name of the load balancer enough or do we need to be more explicit with the listener definition and pull that URL instead?
+			uri := "http://" + args[1].(string)
+
+			return nameFunctionPair{
+				name:       name,
+				invokeAddr: uri,
+				lambda:     false,
 			}
 		}))
 	}
 
 	doc := pulumi.All(nameArnPairs...).ApplyT(func(pairs []interface{}) (string, error) {
-		naps := make(map[string]string)
+		naps := make(map[string]nameFunctionPair)
 
 		for _, p := range pairs {
-			if pair, ok := p.(nameArnPair); ok {
-				naps[pair.name] = pair.invokeArn
+			if pair, ok := p.(nameFunctionPair); ok {
+				naps[pair.name] = pair
 			} else {
 				// XXX: Should not occur
 				return "", fmt.Errorf("invalid data %T %v", p, p)
@@ -110,12 +128,12 @@ func NewAwsApiGateway(ctx *pulumi.Context, name string, args *AwsApiGatewayArgs,
 		}
 
 		for k, p := range args.OpenAPISpec.Paths {
-			p.Get = awsOperation(p.Get, naps)
-			p.Post = awsOperation(p.Post, naps)
-			p.Patch = awsOperation(p.Patch, naps)
-			p.Put = awsOperation(p.Put, naps)
-			p.Delete = awsOperation(p.Delete, naps)
-			p.Options = awsOperation(p.Options, naps)
+			p.Get = awsOperation("GET", p.Get, naps)
+			p.Post = awsOperation("POST", p.Post, naps)
+			p.Patch = awsOperation("PATCH", p.Patch, naps)
+			p.Put = awsOperation("PUT", p.Put, naps)
+			p.Delete = awsOperation("DELETE", p.Delete, naps)
+			p.Options = awsOperation("OPTIONS", p.Options, naps)
 			args.OpenAPISpec.Paths[k] = p
 		}
 
@@ -169,7 +187,7 @@ func NewAwsApiGateway(ctx *pulumi.Context, name string, args *AwsApiGatewayArgs,
 	return res, nil
 }
 
-func awsOperation(op *openapi3.Operation, funcs map[string]string) *openapi3.Operation {
+func awsOperation(method string, op *openapi3.Operation, funcs map[string]nameFunctionPair) *openapi3.Operation {
 	if op == nil {
 		return nil
 	}
@@ -191,13 +209,20 @@ func awsOperation(op *openapi3.Operation, funcs map[string]string) *openapi3.Ope
 		return nil
 	}
 
-	arn := funcs[name]
+	funcDetail := funcs[name]
+
+	integrationType := "http"
+	httpMethod := method
+	if funcDetail.lambda {
+		integrationType = "aws_proxy"
+		httpMethod = "POST"
+	}
 
 	op.Extensions["x-amazon-apigateway-integration"] = map[string]string{
-		"type":                 "aws_proxy",
-		"httpMethod":           "POST",
+		"type":                 integrationType,
+		"httpMethod":           httpMethod,
 		"payloadFormatVersion": "2.0",
-		"uri":                  arn,
+		"uri":                  funcDetail.invokeAddr,
 	}
 
 	return op

@@ -74,6 +74,8 @@ func (d *DeployServer) Up(request *deploy.DeployUpRequest, stream deploy.DeployS
 	sess := session.Must(session.NewSessionWithOptions(session.Options{
 		SharedConfigState: session.SharedConfigEnable,
 	}))
+
+	// TODO: should this be conditional?  - only if we are deploying to Lambda
 	lambdaClient := lambda.New(sess, &aws.Config{Region: aws.String(details.Region)})
 
 	pulumiStack, err := auto.UpsertStackInlineSource(context.TODO(), details.FullStackName, details.Project, func(ctx *pulumi.Context) error {
@@ -167,7 +169,8 @@ func (d *DeployServer) Up(request *deploy.DeployUpRequest, stream deploy.DeployS
 		}
 
 		// Deploy all execution units
-		execs := map[string]*exec.LambdaExecUnit{}
+		lambdas := map[string]*exec.LambdaExecUnit{}
+		fargateSvcs := map[string]*exec.FargateExecUnit{}
 		execPrincipals := map[string]*iam.Role{}
 		for _, res := range request.Spec.Resources {
 			switch eu := res.Config.(type) {
@@ -211,7 +214,7 @@ func (d *DeployServer) Up(request *deploy.DeployUpRequest, stream deploy.DeployS
 				}
 
 				if typeConfig.Lambda != nil {
-					execs[res.Name], err = exec.NewLambdaExecutionUnit(ctx, res.Name, &exec.LambdaExecUnitArgs{
+					lambdas[res.Name], err = exec.NewLambdaExecutionUnit(ctx, res.Name, &exec.LambdaExecUnitArgs{
 						DockerImage: image,
 						StackID:     stackID,
 						Compute:     eu.ExecutionUnit,
@@ -219,7 +222,17 @@ func (d *DeployServer) Up(request *deploy.DeployUpRequest, stream deploy.DeployS
 						Client:      lambdaClient,
 						Config:      *typeConfig.Lambda,
 					})
-					execPrincipals[res.Name] = execs[res.Name].Role
+					execPrincipals[res.Name] = lambdas[res.Name].Role
+				} else if typeConfig.Fargate != nil {
+					fargateSvcs[res.Name], err = exec.NewFargateExecutionUnit(ctx, res.Name, &exec.FargateExecUnitArgs{
+						DockerImage: image,
+						StackID:     stackID,
+						Compute:     eu.ExecutionUnit,
+						EnvMap:      eu.ExecutionUnit.Env,
+						//Client:      lambdaClient,
+						Config: *typeConfig.Fargate,
+					})
+					execPrincipals[res.Name] = fargateSvcs[res.Name].Role
 				} else {
 					return fmt.Errorf("no target execution unit specified for %s", res.Name)
 				}
@@ -249,7 +262,7 @@ func (d *DeployServer) Up(request *deploy.DeployUpRequest, stream deploy.DeployS
 				}
 
 				_, err = api.NewAwsApiGateway(ctx, res.Name, &api.AwsApiGatewayArgs{
-					LambdaFunctions: execs,
+					LambdaFunctions: lambdas,
 					StackID:         stackID,
 					OpenAPISpec:     doc,
 				})
@@ -267,7 +280,7 @@ func (d *DeployServer) Up(request *deploy.DeployUpRequest, stream deploy.DeployS
 				// get the target of the schedule
 
 				execUnitName := t.Schedule.Target.GetExecutionUnit()
-				execUnit, ok := execs[execUnitName]
+				execUnit, ok := lambdas[execUnitName]
 				if !ok {
 					return fmt.Errorf("no execution unit with name %s", execUnitName)
 				}
@@ -302,7 +315,7 @@ func (d *DeployServer) Up(request *deploy.DeployUpRequest, stream deploy.DeployS
 				for _, sub := range t.Topic.Subscriptions {
 					subName := fmt.Sprintf("%s-%s-sub", sub.GetExecutionUnit(), res.Name)
 					// Get the deployed execution unit
-					unit, ok := execs[sub.GetExecutionUnit()]
+					unit, ok := lambdas[sub.GetExecutionUnit()]
 					if !ok {
 						return fmt.Errorf("invalid execution unit %s given for topic subscription", sub.GetExecutionUnit())
 					}

@@ -25,27 +25,39 @@ import (
 type AwsConfig = config.AbstractConfig[*AwsConfigItem]
 
 type AwsConfigItem struct {
-	Lambda    *AwsLambdaConfig `mapstructure:",omitempty"`
+	Lambda    *AwsLambdaConfig  `mapstructure:",omitempty"`
+	Fargate   *AwsFargateConfig `mapstructure:",omitempty"`
 	Telemetry int
 }
 
 type AwsLambdaConfig struct {
-	Memory                int
-	Timeout               int
-	ProvisionedConcurreny int `mapstructure:"provisioned-concurrency"`
+	Memory                 int
+	Timeout                int
+	ProvisionedConcurrency int `mapstructure:"provisioned-concurrency"`
 }
 
 var defaultLambdaConfig = &AwsLambdaConfig{
-	Memory:                128,
-	Timeout:               15,
-	ProvisionedConcurreny: 0,
+	Memory:                 128,
+	Timeout:                15,
+	ProvisionedConcurrency: 0,
+}
+
+type AwsFargateConfig struct {
+	// vCPU Units, ECS allocates CPU resources as 'units', where each vCPU represents 1024 units.
+	Cpu    int
+	Memory int
+}
+
+var defaultFargateConfig = &AwsFargateConfig{
+	Cpu:    1024, // one full vCPU
+	Memory: 512,
 }
 
 var defaultAwsConfigItem = AwsConfigItem{
 	Telemetry: 0,
 }
 
-// Return AwsConfig from stack attributes
+// ConfigFromAttributes returns AwsConfig from stack attributes
 func ConfigFromAttributes(attributes map[string]interface{}) (*AwsConfig, error) {
 	err := config.ValidateRawConfigKeys(attributes, []string{"lambda"})
 	if err != nil {

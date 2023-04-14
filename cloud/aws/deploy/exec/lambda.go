@@ -167,10 +167,10 @@ func NewLambdaExecutionUnit(ctx *pulumi.Context, name string, args *LambdaExecUn
 		return nil, err
 	}
 
-	if args.Config.ProvisionedConcurreny > 0 {
+	if args.Config.ProvisionedConcurrency > 0 {
 		_, err := awslambda.NewProvisionedConcurrencyConfig(ctx, name, &awslambda.ProvisionedConcurrencyConfigArgs{
 			FunctionName:                    res.Function.Arn,
-			ProvisionedConcurrentExecutions: pulumi.Int(args.Config.ProvisionedConcurreny),
+			ProvisionedConcurrentExecutions: pulumi.Int(args.Config.ProvisionedConcurrency),
 			Qualifier:                       res.Function.Name,
 		})
 		if err != nil {
