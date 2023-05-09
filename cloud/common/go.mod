@@ -78,6 +78,7 @@ require (
 	github.com/opentracing/opentracing-go v1.2.0 // indirect
 	github.com/pkg/term v1.1.0 // indirect
 	github.com/pterm/pterm v0.12.54
+	github.com/pulumi/pulumi/sdk v1.14.1
 	github.com/rivo/uniseg v0.4.4 // indirect
 	github.com/rogpeppe/go-internal v1.10.0 // indirect
 	github.com/sabhiram/go-gitignore v0.0.0-20210923224102-525f6e181f06 // indirect

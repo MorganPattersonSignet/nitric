@@ -104,16 +104,18 @@ func ValidateBucketNotifications(workers []Worker) error {
 
 	// Separate the notifications by event type and bucket name
 	for _, n := range notifications {
-		eventFilter := n.Config.NotificationPrefixFilter
-		if eventFilter == "*" {
-			eventFilter = ""
+		notificationPrefixFilter := n.Config.NotificationPrefixFilter
+		if notificationPrefixFilter == "*" {
+			notificationPrefixFilter = ""
 		}
+
+		notificationPrefixFilter = strings.TrimPrefix(notificationPrefixFilter, "/")
 
 		if notificationByEventType[n.Bucket] == nil {
 			notificationByEventType[n.Bucket] = make(map[v1.BucketNotificationType][]string)
 		}
 
-		notificationByEventType[n.Bucket][n.Config.NotificationType] = append(notificationByEventType[n.Bucket][n.Config.NotificationType], eventFilter)
+		notificationByEventType[n.Bucket][n.Config.NotificationType] = append(notificationByEventType[n.Bucket][n.Config.NotificationType], notificationPrefixFilter)
 	}
 
 	for bucketName := range notificationByEventType {
@@ -123,7 +125,7 @@ func ValidateBucketNotifications(workers []Worker) error {
 			sort.Strings(events)
 
 			for idx, n := range events {
-				if n == events[len(events)-1] {
+				if idx == len(events)-1 {
 					break
 				}
 

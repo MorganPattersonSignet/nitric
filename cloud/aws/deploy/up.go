@@ -227,7 +227,6 @@ func (d *DeployServer) Up(request *deploy.DeployUpRequest, stream deploy.DeployS
 			switch b := res.Config.(type) {
 			case *deploy.Resource_Bucket:
 				buckets[res.Name], err = bucket.NewS3Bucket(ctx, res.Name, &bucket.S3BucketArgs{
-					// TODO: Calculate stack ID
 					StackID: stackID,
 					Bucket:  b.Bucket,
 				})
@@ -237,8 +236,6 @@ func (d *DeployServer) Up(request *deploy.DeployUpRequest, stream deploy.DeployS
 
 				if len(b.Bucket.Notifications) > 0 {
 					_, err = bucket.NewS3Notification(ctx, fmt.Sprintf("notification-%s", res.Name), &bucket.S3NotificationArgs{
-						StackID:      stackID,
-						Location:     details.Region,
 						Bucket:       buckets[res.Name],
 						Functions:    execs,
 						Notification: b.Bucket.Notifications,

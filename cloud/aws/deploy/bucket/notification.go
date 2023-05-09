@@ -47,9 +47,6 @@ type S3Notification struct {
 }
 
 type S3NotificationArgs struct {
-	Location string
-	StackID  pulumi.StringInput
-
 	Bucket       *S3Bucket
 	Notification []*deploy.BucketNotificationTarget
 	Functions    map[string]*exec.LambdaExecUnit
@@ -106,7 +103,7 @@ func NewS3Notification(ctx *pulumi.Context, name string, args *S3NotificationArg
 
 	res.Notification, err = s3.NewBucketNotification(ctx, name, &s3.BucketNotificationArgs{
 		Bucket:          args.Bucket.S3.ID(),
-		LambdaFunctions: bucketNotifications,
+		LambdaFunctions: bucketNotifications,		
 	}, pulumi.DependsOn(lo.Values(invokePerms)))
 	if err != nil {
 		return nil, fmt.Errorf("unable to create bucket notification: %w", err)

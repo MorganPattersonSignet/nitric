@@ -479,5 +479,86 @@ var _ = Describe("BucketNotificationWorker", func() {
 				Expect(err).ShouldNot(HaveOccurred())
 			})
 		})
+
+		When("calling with the same config twice", func() {
+			err := ValidateBucketNotifications([]Worker{
+				&BucketNotificationWorker{
+					notification: &v1.BucketNotificationWorker{
+						Bucket: "test",
+						Config: &v1.BucketNotificationConfig{
+							NotificationType:         v1.BucketNotificationType_Created,
+							NotificationPrefixFilter: "/product",
+						},
+					},
+				},
+				&BucketNotificationWorker{
+					notification: &v1.BucketNotificationWorker{
+						Bucket: "test",
+						Config: &v1.BucketNotificationConfig{
+							NotificationType:         v1.BucketNotificationType_Created,
+							NotificationPrefixFilter: "/product",
+						},
+					},
+				},
+			})
+
+			It("should not return an error", func() {
+				Expect(err).Should(HaveOccurred())
+			})
+		})
+
+		When("calling with the same config twice", func() {
+			err := ValidateBucketNotifications([]Worker{
+				&BucketNotificationWorker{
+					notification: &v1.BucketNotificationWorker{
+						Bucket: "test",
+						Config: &v1.BucketNotificationConfig{
+							NotificationType:         v1.BucketNotificationType_Created,
+							NotificationPrefixFilter: "/product",
+						},
+					},
+				},
+				&BucketNotificationWorker{
+					notification: &v1.BucketNotificationWorker{
+						Bucket: "test",
+						Config: &v1.BucketNotificationConfig{
+							NotificationType:         v1.BucketNotificationType_Created,
+							NotificationPrefixFilter: "/product",
+						},
+					},
+				},
+			})
+
+			It("should return an error", func() {
+				Expect(err).Should(HaveOccurred())
+			})
+		})
+
+		When("calling with the same config but one has leading slash", func() {
+			err := ValidateBucketNotifications([]Worker{
+				&BucketNotificationWorker{
+					notification: &v1.BucketNotificationWorker{
+						Bucket: "test",
+						Config: &v1.BucketNotificationConfig{
+							NotificationType:         v1.BucketNotificationType_Created,
+							NotificationPrefixFilter: "product",
+						},
+					},
+				},
+				&BucketNotificationWorker{
+					notification: &v1.BucketNotificationWorker{
+						Bucket: "test",
+						Config: &v1.BucketNotificationConfig{
+							NotificationType:         v1.BucketNotificationType_Created,
+							NotificationPrefixFilter: "/product",
+						},
+					},
+				},
+			})
+
+			It("should return an error", func() {
+				Expect(err).Should(HaveOccurred())
+			})
+		})
 	})
 })

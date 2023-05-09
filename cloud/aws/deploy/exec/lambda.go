@@ -184,6 +184,10 @@ func NewLambdaExecutionUnit(ctx *pulumi.Context, name string, args *LambdaExecUn
 		})
 
 		err := retry.Do(func() error {
+			if args.Client == nil {
+				return fmt.Errorf("cannot perform healthcheck with nil lambda client")
+			}
+			
 			_, err := args.Client.Invoke(&lambda.InvokeInput{
 				FunctionName: aws.String(arn),
 				Payload:      payload,
