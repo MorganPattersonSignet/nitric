@@ -41,7 +41,7 @@ type ImageArgs struct {
 	Server        pulumi.StringInput
 	Username      pulumi.StringInput
 	Password      pulumi.StringInput
-	Telemetry *telemetry.TelemetryConfigArgs
+	Telemetry     *telemetry.TelemetryConfigArgs
 }
 
 type Image struct {
@@ -66,7 +66,7 @@ var (
 func NewImage(ctx *pulumi.Context, name string, args *ImageArgs, opts ...pulumi.ResourceOption) (*Image, error) {
 	res := &Image{Name: name}
 
-	err := ctx.RegisterComponentResource("nitric:Image", name, res, opts...)
+	err := ctx.RegisterComponentResource("nitric:image", name, res, opts...)
 	if err != nil {
 		return nil, err
 	}
@@ -98,21 +98,21 @@ func NewImage(ctx *pulumi.Context, name string, args *ImageArgs, opts ...pulumi.
 	}
 
 	runtimefile.Write(args.Runtime)
-	runtimefile.Close()			
-	
+	runtimefile.Close()
+
 	buildArgs := combineBuildArgs(map[string]string{
-		"BASE_IMAGE": args.SourceImage,
-		"RUNTIME_FILE": "runtime",
+		"BASE_IMAGE":    args.SourceImage,
+		"RUNTIME_FILE":  "runtime",
 		"BASE_IMAGE_ID": sourceImageID,
 	}, imageWrapper.Args)
 
 	res.DockerImage, err = docker.NewImage(ctx, name+"-image", &docker.ImageArgs{
-		ImageName:       args.RepositoryUrl,
+		ImageName: args.RepositoryUrl,
 		Build: docker.DockerBuildArgs{
-			Context: pulumi.String(buildContext),
+			Context:    pulumi.String(buildContext),
 			Dockerfile: pulumi.String(path.Join(buildContext, "Dockerfile")),
-			Args: buildArgs,
-			Platform: pulumi.String("linux/amd64"),
+			Args:       buildArgs,
+			Platform:   pulumi.String("linux/amd64"),
 		},
 		Registry: docker.RegistryArgs{
 			Server:   args.Server,
@@ -155,16 +155,15 @@ func getWrapperDockerfile(configArgs *telemetry.TelemetryConfigArgs) (*WrappedBu
 
 	return &WrappedBuildInput{
 		Dockerfile: imageWrapper,
-		Args: map[string]string{},
+		Args:       map[string]string{},
 	}, nil
 }
 
-func combineBuildArgs(baseArgs, wrapperArgs map[string]string) (pulumi.StringMap) {
+func combineBuildArgs(baseArgs, wrapperArgs map[string]string) pulumi.StringMap {
 	maps.Copy(wrapperArgs, baseArgs)
 
 	return pulumi.ToStringMap(wrapperArgs)
 }
-
 
 // Wraps the source image with the wrapper image, acknowledging the command from the source image
 func wrapDockerImage(wrapper, sourceImage string) (string, string, error) {
