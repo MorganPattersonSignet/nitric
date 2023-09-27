@@ -22,7 +22,6 @@ import (
 	tea "github.com/charmbracelet/bubbletea"
 	commonDeploy "github.com/nitrictech/nitric/cloud/common/deploy"
 	"github.com/nitrictech/nitric/cloud/common/deploy/output/interactive"
-	model "github.com/nitrictech/nitric/cloud/common/deploy/output/interactive"
 	"github.com/nitrictech/nitric/cloud/common/deploy/output/noninteractive"
 	pulumiutils "github.com/nitrictech/nitric/cloud/common/deploy/pulumi"
 	"github.com/nitrictech/nitric/cloud/common/env"
@@ -64,26 +63,6 @@ func (d *DeployServer) Down(request *deploy.DeployDownRequest, stream deploy.Dep
 		// Close the program when we're done
 		defer teaProgram.Quit()
 	}
-
-	pulumiEventChan := make(chan events.EngineEvent)
-	teaUpdates := make(chan tea.Msg)
-	teaProgram := model.NewInteractiveOutput(teaUpdates, pulumiEventChan, &pulumiutils.DownStreamMessageWriter{
-		Stream: stream,
-	})
-	// updateWriter := model.LogMessageSubscriptionWriter{
-	// 	Sub: teaUpdates,
-	// }
-
-	// Run the output in a goroutine
-	// TODO: Run non-interactive version as well...
-	go teaProgram.Run()
-	// Close the program when we're done
-	defer teaProgram.Quit()
-
-	// TODO: Tear down the requested stack
-	// dsMessageWriter := &pulumiutils.DownStreamMessageWriter{
-	// 	Stream: stream,
-	// }
 
 	s, err := auto.UpsertStackInlineSource(context.TODO(), details.FullStackName, details.Project, nil)
 	if err != nil {
