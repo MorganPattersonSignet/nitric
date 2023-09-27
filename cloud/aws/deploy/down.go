@@ -21,8 +21,11 @@ import (
 
 	tea "github.com/charmbracelet/bubbletea"
 	commonDeploy "github.com/nitrictech/nitric/cloud/common/deploy"
+	"github.com/nitrictech/nitric/cloud/common/deploy/output/interactive"
 	model "github.com/nitrictech/nitric/cloud/common/deploy/output/interactive"
+	"github.com/nitrictech/nitric/cloud/common/deploy/output/noninteractive"
 	pulumiutils "github.com/nitrictech/nitric/cloud/common/deploy/pulumi"
+	"github.com/nitrictech/nitric/cloud/common/env"
 	deploy "github.com/nitrictech/nitric/core/pkg/api/nitric/deploy/v1"
 	"github.com/pulumi/pulumi/sdk/v3/go/auto"
 	"github.com/pulumi/pulumi/sdk/v3/go/auto/events"
@@ -35,6 +38,31 @@ func (d *DeployServer) Down(request *deploy.DeployDownRequest, stream deploy.Dep
 	details, err := commonDeploy.CommonStackDetailsFromAttributes(request.Attributes.AsMap())
 	if err != nil {
 		return status.Errorf(codes.InvalidArgument, err.Error())
+	}
+
+	// If we're interactive then we want to provide
+	outputStream := &pulumiutils.DownStreamMessageWriter{
+		Stream: stream,
+	}
+
+	pulumiDestroyOpts := []optdestroy.Option{
+		optdestroy.ProgressStreams(noninteractive.NewNonInterativeOutput(outputStream)),
+	}
+
+	if env.IsInteractive() {
+		pulumiEventChan := make(chan events.EngineEvent)
+		deployModel := interactive.NewOutputModel(make(chan tea.Msg), pulumiEventChan)
+		teaProgram := tea.NewProgram(deployModel, tea.WithOutput(outputStream))
+		pulumiDestroyOpts = []optdestroy.Option{
+			optdestroy.ProgressStreams(deployModel),
+			optdestroy.EventStreams(pulumiEventChan),
+		}
+
+		// Run the output in a goroutine
+		// TODO: Run non-interactive version as well...
+		go teaProgram.Run()
+		// Close the program when we're done
+		defer teaProgram.Quit()
 	}
 
 	pulumiEventChan := make(chan events.EngineEvent)
@@ -63,7 +91,7 @@ func (d *DeployServer) Down(request *deploy.DeployDownRequest, stream deploy.Dep
 	}
 
 	// destroy the stack
-	_, err = s.Destroy(context.TODO(), optdestroy.EventStreams(pulumiEventChan))
+	_, err = s.Destroy(context.TODO(), pulumiDestroyOpts...)
 	if err != nil {
 		return err
 	}

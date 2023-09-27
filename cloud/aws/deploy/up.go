@@ -19,7 +19,6 @@ package deploy
 import (
 	"context"
 	"fmt"
-	"io"
 	"runtime/debug"
 
 	tea "github.com/charmbracelet/bubbletea"
@@ -32,7 +31,6 @@ import (
 	deploy "github.com/nitrictech/nitric/core/pkg/api/nitric/deploy/v1"
 	"github.com/pulumi/pulumi/sdk/v3/go/auto"
 	"github.com/pulumi/pulumi/sdk/v3/go/auto/events"
-	"github.com/pulumi/pulumi/sdk/v3/go/auto/optrefresh"
 	"github.com/pulumi/pulumi/sdk/v3/go/auto/optup"
 	"google.golang.org/grpc/codes"
 	"google.golang.org/grpc/status"
@@ -63,8 +61,9 @@ func (d *DeployServer) Up(request *deploy.DeployUpRequest, stream deploy.DeployS
 	}
 
 	// Default to the non-interactive writer
-	var logWriter io.Writer = noninteractive.NewNonInterativeOutput(outputStream)
-	pulumiUpExtraOpts := []optup.Option{}
+	pulumiUpOpts := []optup.Option{
+		optup.ProgressStreams(noninteractive.NewNonInterativeOutput(outputStream)),
+	}
 
 	if env.IsInteractive() {
 		pulumiEventChan := make(chan events.EngineEvent)
@@ -73,8 +72,10 @@ func (d *DeployServer) Up(request *deploy.DeployUpRequest, stream deploy.DeployS
 			Stream: stream,
 		}))
 
-		pulumiUpExtraOpts = append(pulumiUpExtraOpts, optup.EventStreams(pulumiEventChan))
-		logWriter = deployModel
+		pulumiUpOpts = []optup.Option{
+			optup.ProgressStreams(deployModel),
+			optup.EventStreams(pulumiEventChan),
+		}
 
 		// Run the output in a goroutine
 		// TODO: Run non-interactive version as well...
@@ -91,7 +92,8 @@ func (d *DeployServer) Up(request *deploy.DeployUpRequest, stream deploy.DeployS
 	_ = pulumiStack.SetConfig(context.TODO(), "aws:region", auto.ConfigValue{Value: details.Region})
 
 	if config.Refresh {
-		_, err := pulumiStack.Refresh(context.TODO(), optrefresh.ProgressStreams(logWriter))
+		// TODO: Handle refresh logging
+		_, err := pulumiStack.Refresh(context.TODO())
 		if err != nil {
 			return err
 		}
@@ -99,7 +101,7 @@ func (d *DeployServer) Up(request *deploy.DeployUpRequest, stream deploy.DeployS
 
 	// Run the program
 	// res, err := pulumiStack.Up(context.TODO(), optup.ProgressStreams(logWriter), optup.EventStreams(pulumiEventChan))
-	res, err := pulumiStack.Up(context.TODO(), optup.ProgressStreams(logWriter))
+	res, err := pulumiStack.Up(context.TODO(), pulumiUpOpts...)
 	if err != nil {
 		return err
 	}
