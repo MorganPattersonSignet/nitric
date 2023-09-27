@@ -19,10 +19,13 @@ package deploy
 import (
 	"context"
 
+	tea "github.com/charmbracelet/bubbletea"
 	commonDeploy "github.com/nitrictech/nitric/cloud/common/deploy"
+	model "github.com/nitrictech/nitric/cloud/common/deploy/output/interactive"
 	pulumiutils "github.com/nitrictech/nitric/cloud/common/deploy/pulumi"
 	deploy "github.com/nitrictech/nitric/core/pkg/api/nitric/deploy/v1"
 	"github.com/pulumi/pulumi/sdk/v3/go/auto"
+	"github.com/pulumi/pulumi/sdk/v3/go/auto/events"
 	"github.com/pulumi/pulumi/sdk/v3/go/auto/optdestroy"
 	"google.golang.org/grpc/codes"
 	"google.golang.org/grpc/status"
@@ -34,10 +37,25 @@ func (d *DeployServer) Down(request *deploy.DeployDownRequest, stream deploy.Dep
 		return status.Errorf(codes.InvalidArgument, err.Error())
 	}
 
-	// TODO: Tear down the requested stack
-	dsMessageWriter := &pulumiutils.DownStreamMessageWriter{
+	pulumiEventChan := make(chan events.EngineEvent)
+	teaUpdates := make(chan tea.Msg)
+	teaProgram := model.NewInteractiveOutput(teaUpdates, pulumiEventChan, &pulumiutils.DownStreamMessageWriter{
 		Stream: stream,
-	}
+	})
+	// updateWriter := model.LogMessageSubscriptionWriter{
+	// 	Sub: teaUpdates,
+	// }
+
+	// Run the output in a goroutine
+	// TODO: Run non-interactive version as well...
+	go teaProgram.Run()
+	// Close the program when we're done
+	defer teaProgram.Quit()
+
+	// TODO: Tear down the requested stack
+	// dsMessageWriter := &pulumiutils.DownStreamMessageWriter{
+	// 	Stream: stream,
+	// }
 
 	s, err := auto.UpsertStackInlineSource(context.TODO(), details.FullStackName, details.Project, nil)
 	if err != nil {
@@ -45,7 +63,7 @@ func (d *DeployServer) Down(request *deploy.DeployDownRequest, stream deploy.Dep
 	}
 
 	// destroy the stack
-	_, err = s.Destroy(context.TODO(), optdestroy.ProgressStreams(dsMessageWriter))
+	_, err = s.Destroy(context.TODO(), optdestroy.EventStreams(pulumiEventChan))
 	if err != nil {
 		return err
 	}
