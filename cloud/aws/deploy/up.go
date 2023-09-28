@@ -27,7 +27,6 @@ import (
 	"github.com/nitrictech/nitric/cloud/common/deploy/output/interactive"
 	"github.com/nitrictech/nitric/cloud/common/deploy/output/noninteractive"
 	pulumiutils "github.com/nitrictech/nitric/cloud/common/deploy/pulumi"
-	"github.com/nitrictech/nitric/cloud/common/env"
 	deploy "github.com/nitrictech/nitric/core/pkg/api/nitric/deploy/v1"
 	"github.com/pulumi/pulumi/sdk/v3/go/auto"
 	"github.com/pulumi/pulumi/sdk/v3/go/auto/events"
@@ -65,7 +64,7 @@ func (d *DeployServer) Up(request *deploy.DeployUpRequest, stream deploy.DeployS
 		optup.ProgressStreams(noninteractive.NewNonInterativeOutput(outputStream)),
 	}
 
-	if env.IsInteractive() {
+	if request.Interactive {
 		pulumiEventChan := make(chan events.EngineEvent)
 		deployModel := interactive.NewOutputModel(make(chan tea.Msg), pulumiEventChan)
 		teaProgram := tea.NewProgram(deployModel, tea.WithOutput(&pulumiutils.UpStreamMessageWriter{
