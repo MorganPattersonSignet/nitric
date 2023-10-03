@@ -9,8 +9,9 @@ import (
 type PulumiData struct {
 	Urn string
 	// Name   string
-	Type   string
-	Status ResourceStatus
+	Type        string
+	Status      ResourceStatus
+	LastMessage string
 }
 
 func (pd PulumiData) Name() string {
@@ -32,6 +33,7 @@ const (
 	ResourceStatus_Failed_Delete
 	ResourceStatus_Failed_Update
 	ResourceStatus_Unchanged
+	ResourceStatus_None
 )
 
 var PreResourceStates = map[string]ResourceStatus{
@@ -55,6 +57,7 @@ var FailedResourceStates = map[string]ResourceStatus{
 }
 
 var MessageResourceStates = map[ResourceStatus]string{
+
 	ResourceStatus_Creating:      "creating",
 	ResourceStatus_Updating:      "updating",
 	ResourceStatus_Deleting:      "deleting",
@@ -65,6 +68,7 @@ var MessageResourceStates = map[ResourceStatus]string{
 	ResourceStatus_Failed_Delete: "delete failed",
 	ResourceStatus_Failed_Update: "updated failed",
 	ResourceStatus_Unchanged:     "unchanged",
+	ResourceStatus_None:          "",
 }
 
 // TODO: Use TUI standard colors when lib available

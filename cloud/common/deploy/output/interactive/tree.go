@@ -5,13 +5,13 @@ type Tree[T any] struct {
 }
 
 // Find node from root
-func (t *Tree[T]) FindNode(urn string) *Node[T] {
-	return t.findNode(t.Root, urn)
+func (t *Tree[T]) FindNode(id string) *Node[T] {
+	return t.findNode(t.Root, id)
 }
 
 // Recursive implementation
-func (t *Tree[T]) findNode(node *Node[T], urn string) *Node[T] {
-	if node.Id == urn {
+func (t *Tree[T]) findNode(node *Node[T], id string) *Node[T] {
+	if node.Id == id {
 		// Return if we have a match
 		return node
 	}
@@ -19,7 +19,7 @@ func (t *Tree[T]) findNode(node *Node[T], urn string) *Node[T] {
 	// otherwise walk the children recursively
 	if len(node.Children) > 0 {
 		for _, child := range node.Children {
-			if foundNode := t.findNode(child, urn); foundNode != nil {
+			if foundNode := t.findNode(child, id); foundNode != nil {
 				return foundNode
 			}
 		}

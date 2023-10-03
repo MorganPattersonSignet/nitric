@@ -4,6 +4,7 @@ import (
 	"fmt"
 	"io"
 	"strings"
+	"time"
 
 	"os"
 
@@ -57,6 +58,11 @@ func (m *DeployModel) handlePulumiEngineEvent(evt events.EngineEvent) {
 	// These events are directly tied to a resource
 	if evt.DiagnosticEvent != nil {
 		// TODO: Handle diagnostic event logging
+		node := m.tree.FindNode(evt.DiagnosticEvent.URN)
+		if node != nil {
+			node.Data.LastMessage = evt.DiagnosticEvent.Message
+		}
+
 	} else if evt.ResourcePreEvent != nil {
 		// attempt to locate the parent node
 		meta := evt.ResourcePreEvent.Metadata.New
@@ -67,6 +73,7 @@ func (m *DeployModel) handlePulumiEngineEvent(evt events.EngineEvent) {
 		parentNode := m.tree.FindNode(meta.Parent)
 		if parentNode != nil {
 			parentNode.AddChild(&Node[PulumiData]{
+				Id: evt.ResourcePreEvent.Metadata.URN,
 				Data: &PulumiData{
 					Urn:    evt.ResourcePreEvent.Metadata.URN,
 					Type:   evt.ResourcePreEvent.Metadata.Type,
@@ -116,41 +123,48 @@ func (m DeployModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	}
 }
 
-func (m DeployModel) renderNodeRow(node *Node[PulumiData], depth int, isLast bool) table.Row {
-	linkChar := "├─"
-
-	if isLast {
-		linkChar = "└─"
-	}
+func (m DeployModel) renderNodeRow(node *Node[PulumiData], depth int, isLast bool, parentLast bool) table.Row {
+	linkChar := lo.Ternary(!isLast, "├─", "└─")
+	prefixString := lo.Ternary(!parentLast, fmt.Sprintf("│  %s", linkChar), linkChar)
+	marginLeft := lo.Ternary(!parentLast, 3*(depth-1), 3*depth)
 
 	statusStyle := StatusStyles[node.Data.Status]
-
 	isPending := lo.Contains(lo.Values(PreResourceStates), node.Data.Status)
+	isComplete := lo.Contains(lo.Values(SuccessResourceStates), node.Data.Status)
+	isFailed := lo.Contains(lo.Values(FailedResourceStates), node.Data.Status)
 
 	status := statusStyle.Render(MessageResourceStates[node.Data.Status])
 	if isPending {
-		status = statusStyle.Render(MessageResourceStates[node.Data.Status] + m.spinner.View())
+		status = statusStyle.Render(MessageResourceStates[node.Data.Status] + " " + m.spinner.View())
+	} else if isComplete {
+		status = statusStyle.Render(MessageResourceStates[node.Data.Status] + " " + "👍")
+	} else if isFailed {
+		status = statusStyle.Render(MessageResourceStates[node.Data.Status] + " " + "👎")
 	}
 
 	return table.Row{
 		// Name
-		lipgloss.NewStyle().MarginLeft(3 * depth).SetString(linkChar).Render(node.Data.Name()),
+		lipgloss.NewStyle().MarginLeft(marginLeft).SetString(prefixString).Render(node.Data.Name()),
 		// Type
 		node.Data.Type,
 		// Status
 		status,
+		// Message
+		node.Data.LastMessage,
 	}
 }
 
 // Render the tree rows
-func (m DeployModel) renderNodeRows(depth int, nodes ...*Node[PulumiData]) []table.Row {
+func (m DeployModel) renderNodeRows(depth int, parentLast bool, nodes ...*Node[PulumiData]) []table.Row {
 	// render this nods info
 	rows := []table.Row{}
+
 	for idx, n := range nodes {
-		rows = append(rows, m.renderNodeRow(n, depth, idx == len(nodes)-1))
+		isLast := idx == len(nodes)-1
+		rows = append(rows, m.renderNodeRow(n, depth, isLast, parentLast))
 
 		if len(n.Children) > 0 {
-			rows = append(rows, m.renderNodeRows(depth+1, n.Children...)...)
+			rows = append(rows, m.renderNodeRows(depth+1, isLast, n.Children...)...)
 		}
 	}
 
@@ -158,13 +172,24 @@ func (m DeployModel) renderNodeRows(depth int, nodes ...*Node[PulumiData]) []tab
 }
 
 func (m DeployModel) View() string {
-	columns := []table.Column{
-		{Title: "Name", Width: 60},
-		{Title: "Type", Width: 30},
-		{Title: "Status", Width: 30},
-	}
+	rows := m.renderNodeRows(0, true, m.tree.Root)
 
-	rows := m.renderNodeRows(0, m.tree.Root)
+	// Calculate dynamic column widths
+	// colWidths := lo.Reduce(rows, func(agg []int, row table.Row, idx int) []int {
+	// 	return []int{
+	// 		lo.Max[int]([]int{agg[0], len(row[0])}),
+	// 		lo.Max[int]([]int{agg[1], len(row[1])}),
+	// 		lo.Max[int]([]int{agg[2], len(row[2])}),
+	// 		lo.Max[int]([]int{agg[3], len(row[3])}),
+	// 	}
+	// }, []int{0, 0, 0, 0})
+
+	columns := []table.Column{
+		{Title: "Name", Width: 30},
+		{Title: "Type", Width: 20},
+		{Title: "Status", Width: 20},
+		{Title: "Logs", Width: 50},
+	}
 
 	t := table.New(
 		table.WithColumns(columns),
@@ -208,6 +233,11 @@ func NewInteractiveOutput(sub chan tea.Msg, pulumiSub chan events.EngineEvent, o
 	}, tea.WithOutput(output))
 }
 
+var HeresHoping = spinner.Spinner{
+	Frames: []string{"🕛", "🕐", "🕑", "🕒", "🕓", "🕔", "🕕", "🕖", "🕗", "🕘", "🕙", "🕚"},
+	FPS:    time.Second / 24, //nolint:gomnd
+}
+
 func NewOutputModel(sub chan tea.Msg, pulumiSub chan events.EngineEvent) DeployModel {
 	// FIXME: Set this according to the connected output preferences
 	os.Setenv("CLICOLOR_FORCE", "1")
@@ -216,14 +246,14 @@ func NewOutputModel(sub chan tea.Msg, pulumiSub chan events.EngineEvent) DeployM
 		pulumiSub: pulumiSub,
 		sub:       sub,
 		logs:      make([]string, 0),
-		spinner:   spinner.New(spinner.WithSpinner(spinner.Ellipsis)),
+		spinner:   spinner.New(spinner.WithSpinner(spinner.Dot)),
 		tree: &Tree[PulumiData]{
 			Root: &Node[PulumiData]{
 				Id: "root",
 				Data: &PulumiData{
-					Urn:    "root",
-					Type:   "project",
-					Status: ResourceStatus_Unchanged,
+					Urn:    "project",
+					Type:   "",
+					Status: ResourceStatus_None,
 				},
 				Children: []*Node[PulumiData]{},
 			},
