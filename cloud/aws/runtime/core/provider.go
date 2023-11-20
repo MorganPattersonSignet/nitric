@@ -32,7 +32,7 @@ import (
 
 	"github.com/nitrictech/nitric/cloud/aws/ifaces/apigatewayv2iface"
 	"github.com/nitrictech/nitric/cloud/aws/ifaces/resourcegroupstaggingapiiface"
-	"github.com/nitrictech/nitric/core/pkg/plugins/resource"
+	v1 "github.com/nitrictech/nitric/core/pkg/api/nitric/v1"
 	"github.com/nitrictech/nitric/core/pkg/utils"
 )
 
@@ -49,39 +49,32 @@ const (
 	AwsResource_EventRule    AwsResource = "events:rule"
 )
 
-var resourceTypeMap = map[resource.ResourceType]AwsResource{
-	resource.ResourceType_Api:       AwsResource_Api,
-	resource.ResourceType_Websocket: AwsResource_Api,
-}
-
-type AwsProvider interface {
-	resource.ResourceService
-
-	// GetResources API operation for AWS Provider.
-	// Returns requested aws resources for the given resource type
-	GetResources(context.Context, AwsResource) (map[string]string, error)
-	GetApiGatewayById(context.Context, string) (*apigatewayv2.GetApiOutput, error)
+var resourceTypeMap = map[v1.ResourceType]AwsResource{
+	v1.ResourceType_Api:       AwsResource_Api,
+	v1.ResourceType_Websocket: AwsResource_Api,
 }
 
 // Aws core utility provider
-type awsProviderImpl struct {
+type AwsProvider struct {
 	stackID   string
 	cacheLock sync.Mutex
 	client    resourcegroupstaggingapiiface.ResourceGroupsTaggingAPIAPI
 	apiClient apigatewayv2iface.ApiGatewayV2API
 	cache     map[AwsResource]map[string]string
+	v1.UnimplementedResourceServiceServer
 }
 
-var _ AwsProvider = &awsProviderImpl{}
-
-func (a *awsProviderImpl) Declare(ctx context.Context, req resource.ResourceDeclareRequest) error {
+func (a *AwsProvider) Declare(ctx context.Context, req *v1.ResourceDeclareRequest) error {
 	return nil
 }
 
-func (a *awsProviderImpl) Details(ctx context.Context, typ resource.ResourceType, name string) (*resource.DetailsResponse[any], error) {
-	rt, ok := resourceTypeMap[typ]
+func (a *AwsProvider) Details(ctx context.Context, req *v1.ResourceDetailsRequest) (*v1.ResourceDetailsResponse, error) {
+	resourceType := req.GetResource().Type
+	resourceName := req.GetResource().GetName()
+
+	rt, ok := resourceTypeMap[resourceType]
 	if !ok {
-		return nil, fmt.Errorf("unhandled resource type: %s", typ)
+		return nil, fmt.Errorf("unhandled resource type: %s", resourceType)
 	}
 
 	// Get resource references (arns) for the resource type
@@ -90,12 +83,12 @@ func (a *awsProviderImpl) Details(ctx context.Context, typ resource.ResourceType
 		return nil, err
 	}
 
-	arn, ok := resources[name]
+	arn, ok := resources[resourceName]
 	if !ok {
-		return nil, fmt.Errorf("unable to find resource %s for name: %s", typ, name)
+		return nil, fmt.Errorf("unable to find resource %s for name: %s", resourceType, resourceName)
 	}
 
-	details := &resource.DetailsResponse[any]{
+	details := &v1.ResourceDetailsResponse{
 		Id:       arn,
 		Provider: "aws",
 	}
@@ -112,13 +105,17 @@ func (a *awsProviderImpl) Details(ctx context.Context, typ resource.ResourceType
 		}
 
 		details.Service = "ApiGateway"
-		if typ == resource.ResourceType_Api {
-			details.Detail = resource.ApiDetails{
-				URL: *api.ApiEndpoint,
+		if resourceType == v1.ResourceType_Api {
+			details.Details = &v1.ResourceDetailsResponse_Api{
+				Api: &v1.ApiResourceDetails{
+					Url: *api.ApiEndpoint,
+				},
 			}
 		} else {
-			details.Detail = resource.WebsocketDetails{
-				URL: fmt.Sprintf("%s/$default", *api.ApiEndpoint),
+			details.Details = &v1.ResourceDetailsResponse_Websocket{
+				Websocket: &v1.WebsocketResourceDetails{
+					Url: fmt.Sprintf("%s/$default", *api.ApiEndpoint),
+				},
 			}
 		}
 
@@ -128,13 +125,13 @@ func (a *awsProviderImpl) Details(ctx context.Context, typ resource.ResourceType
 	}
 }
 
-func (a *awsProviderImpl) GetApiGatewayById(ctx context.Context, apiId string) (*apigatewayv2.GetApiOutput, error) {
+func (a *AwsProvider) GetApiGatewayById(ctx context.Context, apiId string) (*apigatewayv2.GetApiOutput, error) {
 	return a.apiClient.GetApi(context.TODO(), &apigatewayv2.GetApiInput{
 		ApiId: aws.String(apiId),
 	})
 }
 
-func resourceTypeFromArn(arn string) (resource.ResourceType, error) {
+func resourceTypeFromArn(arn string) (string, error) {
 	if !awsArn.IsARN(arn) {
 		return "", fmt.Errorf("invalid ARN provided")
 	}
@@ -167,7 +164,7 @@ func resourceTypeFromArn(arn string) (resource.ResourceType, error) {
 }
 
 // populate the resource cache
-func (a *awsProviderImpl) populateCache(ctx context.Context) error {
+func (a *AwsProvider) populateCache(ctx context.Context) error {
 	a.cacheLock.Lock()
 	defer a.cacheLock.Unlock()
 	if a.cache == nil {
@@ -227,7 +224,7 @@ func (a *awsProviderImpl) populateCache(ctx context.Context) error {
 	return nil
 }
 
-func (a *awsProviderImpl) GetResources(ctx context.Context, typ AwsResource) (map[string]string, error) {
+func (a *AwsProvider) GetResources(ctx context.Context, typ AwsResource) (map[string]string, error) {
 	if err := a.populateCache(ctx); err != nil {
 		return nil, fmt.Errorf("error populating resource cache")
 	}
@@ -235,7 +232,7 @@ func (a *awsProviderImpl) GetResources(ctx context.Context, typ AwsResource) (ma
 	return a.cache[typ], nil
 }
 
-func New() (AwsProvider, error) {
+func New() (*AwsProvider, error) {
 	awsRegion := utils.GetEnv("AWS_REGION", "us-east-1")
 	stackID := utils.GetEnv("NITRIC_STACK_ID", "")
 
@@ -254,7 +251,7 @@ func New() (AwsProvider, error) {
 	apiClient := apigatewayv2.NewFromConfig(cfg)
 	client := resourcegroupstaggingapi.NewFromConfig(cfg)
 
-	return &awsProviderImpl{
+	return &AwsProvider{
 		stackID:   stackID,
 		client:    client,
 		cacheLock: sync.Mutex{},
