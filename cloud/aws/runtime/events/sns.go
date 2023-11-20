@@ -43,7 +43,7 @@ type SnsEventService struct {
 	events.UnimplementedEventsPlugin
 	client    snsiface.SNSAPI
 	sfnClient sfniface.SFNAPI
-	provider  core.AwsProvider
+	provider  *core.AwsProvider
 }
 
 func isSNSAccessDeniedErr(err error) bool {
@@ -186,7 +186,7 @@ func (s *SnsEventService) ListTopics(ctx context.Context) ([]string, error) {
 }
 
 // Create new SNS event service plugin
-func New(provider core.AwsProvider) (events.EventService, error) {
+func New(provider *core.AwsProvider) (events.EventService, error) {
 	awsRegion := utils2.GetEnv("AWS_REGION", "us-east-1")
 
 	cfg, sessionError := config.LoadDefaultConfig(context.TODO(), config.WithRegion(awsRegion))
@@ -206,7 +206,7 @@ func New(provider core.AwsProvider) (events.EventService, error) {
 	}, nil
 }
 
-func NewWithClient(provider core.AwsProvider, client snsiface.SNSAPI, sfnClient sfniface.SFNAPI) (events.EventService, error) {
+func NewWithClient(provider *core.AwsProvider, client snsiface.SNSAPI, sfnClient sfniface.SFNAPI) (events.EventService, error) {
 	return &SnsEventService{
 		provider:  provider,
 		client:    client,

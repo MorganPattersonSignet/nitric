@@ -31,6 +31,7 @@ import (
 
 	"github.com/nitrictech/nitric/cloud/aws/ifaces/dynamodbiface"
 	"github.com/nitrictech/nitric/cloud/aws/runtime/core"
+	v1 "github.com/nitrictech/nitric/core/pkg/api/nitric/v1"
 	"github.com/nitrictech/nitric/core/pkg/plugins/document"
 	"github.com/nitrictech/nitric/core/pkg/plugins/errors"
 	"github.com/nitrictech/nitric/core/pkg/plugins/errors/codes"
@@ -46,9 +47,10 @@ const (
 
 // DynamoDocService - AWS DynamoDB AWS Nitric Document service
 type DynamoDocService struct {
-	document.UnimplementedDocumentPlugin
+	v1.UnimplementedDocumentServiceServer
+	// document.UnimplementedDocumentPlugin
 	client   dynamodbiface.DynamoDBAPI
-	provider core.AwsProvider
+	provider *core.AwsProvider
 }
 
 func isDynamoAccessDeniedErr(err error) bool {
@@ -59,7 +61,7 @@ func isDynamoAccessDeniedErr(err error) bool {
 	return false
 }
 
-func (s *DynamoDocService) Get(ctx context.Context, key *document.Key) (*document.Document, error) {
+func (s *DynamoDocService) Get(ctx context.Context, req *v1.DocumentGetRequest) (*v1.DocumentGetResponse, error) {
 	newErr := errors.ErrorsWithScope(
 		"DynamoDocService.Get",
 		map[string]interface{}{
@@ -139,6 +141,10 @@ func (s *DynamoDocService) Get(ctx context.Context, key *document.Key) (*documen
 		Content: itemMap,
 	}, nil
 }
+
+// func (s *DynamoDocService) Get(ctx context.Context, key *document.Key) (*document.Document, error) {
+
+// }
 
 func (s *DynamoDocService) Set(ctx context.Context, key *document.Key, value map[string]interface{}) error {
 	newErr := errors.ErrorsWithScope(
